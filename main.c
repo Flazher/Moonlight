@@ -8,7 +8,7 @@
 typedef struct {
 	GC gc;
 	XGCValues GCvalues;
-	int x, y, Width, Height;
+	int X, Y, Width, Height;
 	Drawable drawable;
 	unsigned long DefaultGCMask;
 } DrawingContext;
@@ -19,62 +19,72 @@ typedef struct
 	int DefaultScreen;
 	Window Root;
 	DrawingContext DC;
-	Window BackgroundWindow;
 	unsigned long DefaultEventMask;
 } MoonlightProps;
 
-void MoonlightDisplayInit (MoonlightProps *Moonlight);
-static void MoonlightDisplayTerminate (MoonlightProps *Moonlight);
+void MoonlightDisplayInit ();
+static void MoonlightDisplayTerminate ();
+unsigned long GetColor (const char *colorhex);
 
 MoonlightProps Moonlight;
 
 void
-MoonlightDisplayInit (MoonlightProps *Moonlight)
+MoonlightDisplayInit ()
 {
-	MoonlightProps *M = Moonlight;
-	if (!(M->Display = XOpenDisplay(NULL)))
+	if (!(Moonlight.Display = XOpenDisplay(NULL)))
 	{
 		printf ("Connection to X failed. Is $DISPLAY variable (%s) correct?",
 			getenv("DISPLAY"));
 		exit (1);
 	}
 	
-	M->DefaultScreen = DefaultScreen (M->Display);
-	M->Root = RootWindow (M->Display, M->DefaultScreen);
-	M->DefaultEventMask = ExposureMask | KeyPressMask;
+	Moonlight.DefaultScreen = DefaultScreen (Moonlight.Display);
+	Moonlight.Root = RootWindow (Moonlight.Display, Moonlight.DefaultScreen);
+	Moonlight.DefaultEventMask = ExposureMask | KeyPressMask;
 
-	M->DC.GCvalues.function   = GXxor; 
-	M->DC.GCvalues.background = WhitePixel (M->Display, M->DefaultScreen);
-	M->DC.GCvalues.foreground = WhitePixel (M->Display, M->DefaultScreen);
-	M->DC.GCvalues.plane_mask = AllPlanes;
-	M->DC.Width = DisplayWidth (M->Display, M->DefaultScreen);
-	M->DC.Height = DisplayHeight (M->Display, M->DefaultScreen);
+	Moonlight.DC.GCvalues.function   = GXxor; 
+	Moonlight.DC.GCvalues.background = GetColor("#333333");
+	Moonlight.DC.GCvalues.foreground = GetColor("#333333");
+	Moonlight.DC.GCvalues.plane_mask = AllPlanes;
+	Moonlight.DC.Width = DisplayWidth (Moonlight.Display, Moonlight.DefaultScreen);
+	Moonlight.DC.Height = DisplayHeight (Moonlight.Display, Moonlight.DefaultScreen);
+	Moonlight.DC.X = 0;
+	Moonlight.DC.Y = 0;
 	
-	M->DC.DefaultGCMask = 
+	Moonlight.DC.DefaultGCMask = 
 		GCFunction | GCPlaneMask | GCBackground | GCForeground;
 	
 	XEvent ev;
 	
-	M->BackgroundWindow = XCreateSimpleWindow
-	(
-		M->Display, M->Root, 0, 0, M->DC.Width, M->DC.Height,
-		0, M->DC.GCvalues.background, M->DC.GCvalues.background
-	);
-
-	XMapWindow(M->Display, M->BackgroundWindow);
-
-	M->DC.gc = XCreateGC
-		(M->Display, M->BackgroundWindow, M->DC.DefaultGCMask, &M->DC.GCvalues);	
+	Moonlight.DC.gc = XCreateGC
+		(Moonlight.Display, Moonlight.Root, Moonlight.DC.DefaultGCMask, &Moonlight.DC.GCvalues);	
 	
-	XFlush (M->Display);
-	XSelectInput(M->Display, M->BackgroundWindow, M->DefaultEventMask);
+	Moonlight.DC.drawable = XCreatePixmap (Moonlight.Display, Moonlight.Root, Moonlight.DC.Width, Moonlight.DC.Height, DefaultDepth(Moonlight.Display, Moonlight.DefaultScreen));
+
+	/*
+	 * What is this dummy rectangle for?
+	 *
+	 * I don't want to separate solid wallpaper/image background code
+	 * So, here is Moonlight.DC.drawable pixmap filled by one big rectangle in cause of
+	 * wallpaper is solid.
+	 *
+	 * I'll fix it later. Maybe. If I'll become a bit smarter.
+	 */
+
+	XFillRectangle (Moonlight.Display, Moonlight.DC.drawable, Moonlight.DC.gc, Moonlight.DC.X, Moonlight.DC.Y, Moonlight.DC.Width, Moonlight.DC.Height);
+	
+	XSetWindowBackgroundPixmap(Moonlight.Display, Moonlight.Root, Moonlight.DC.drawable);
+	XMapWindow(Moonlight.Display, Moonlight.Root);
+	XClearWindow (Moonlight.Display, Moonlight.Root);
+	XFlush (Moonlight.Display);
+	XSelectInput(Moonlight.Display, Moonlight.Root, Moonlight.DefaultEventMask);
 	
 	while (1)
 	{
-		XNextEvent(M->Display, &ev);
+		XNextEvent(Moonlight.Display, &ev);
 		
 		if (ev.type == Expose) {
-			XFillRectangle(M->Display, M->BackgroundWindow, M->DC.gc, 0, 0, 500, 500);
+			// Here is my expose handler lolololol	
 		}
 		if (ev.type == KeyPress)
 			break;
@@ -82,16 +92,29 @@ MoonlightDisplayInit (MoonlightProps *Moonlight)
 }
 
 static void
-MoonlightDisplayTerminate (MoonlightProps *Moonlight)
+MoonlightDisplayTerminate ()
 {
-	XFreeGC (Moonlight->Display, Moonlight->DC.gc);
+	XFreeGC (Moonlight.Display, Moonlight.DC.gc);
+	XFreePixmap (Moonlight.Display, Moonlight.DC.drawable);
 }
 
 int main(int argc, char **argv)
 {
-	MoonlightDisplayInit (&Moonlight);
-	MoonlightDisplayTerminate (&Moonlight);
+	MoonlightDisplayInit ();
+	MoonlightDisplayTerminate ();
 	XCloseDisplay (Moonlight.Display);
 
 	return 0;
+}
+
+unsigned long GetColor (const char *colorhex)
+{
+	Colormap CMap = DefaultColormap (Moonlight.Display, Moonlight.DefaultScreen);
+	XColor Color;
+	if (!XAllocNamedColor (Moonlight.Display, CMap, colorhex, &Color, &Color))
+	{
+		printf("Cannot allocate color %s\n", colorhex);
+		exit(1);
+	}
+	return Color.pixel;
 }
