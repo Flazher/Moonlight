@@ -76,7 +76,7 @@ static void StartEventHandler ();
 
 static void ScanForWindows ();
 unsigned long GetColor (const char *);
-static void GetMousePosition (Point *);
+void GetMousePosition (Point *);
 
 static void CreateBar ();
 static void DrawBar ();
@@ -160,7 +160,7 @@ MoonlightDisplayInit ()
 	// Is not good D:
 	// Using feh while I don't know how to change wallpaper another way
 	
-	system ("feh /home/flazher/dev/wm/moon.png --bg-scale");
+	//system ("feh /home/flazher/dev/wm/moon.png --bg-scale");
 	XClearWindow (Moonlight.Display, Moonlight.Root);
 	CreateBar();
 	DrawBar();
@@ -461,7 +461,7 @@ DragClient (Client *client)
 	}
 }
 
-static void
+void
 GetMousePosition (Point *point)
 {
 	Window MouseRoot, MouseWindow;
