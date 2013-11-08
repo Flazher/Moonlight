@@ -7,16 +7,7 @@
 #include <Imlib2.h>
 #include <giblib/giblib.h>
 #include <unistd.h>
-
-#define BACKGROUNDCOLOR "#333333"
-#define BARCOLOR		"#888888"
-#define BARHEIGHT		20
-#define TESTSTATUS		"Moonlight v0.1"
-#define TESTPANEL		"Cirno is baka"
-
-#define DEFAULTMASK		(EnterWindowMask | ExposureMask | FocusChangeMask | PropertyChangeMask | SubstructureNotifyMask)
-#define BUTTONMASK		(ButtonPressMask | ButtonReleaseMask)
-#define MOUSEMASK		(BUTTONMASK | PointerMotionMask)
+#include "moonlight.h"
 
 ////////////////////
 // Just for debug //
@@ -46,8 +37,8 @@ typedef struct Client Client;
 
 struct Client
 {
-	Window window;
-	int x, y, Width, Height;
+	Window window, header;
+	int x, y, width, height;
 	Client *Next;
 };
 
@@ -56,6 +47,14 @@ typedef struct
 	int x;
 	int y;
 } Point;
+
+enum
+{
+	TOP_LEFT_CORNER,
+	TOP_RIGHT_CORNER,
+	BOTTOM_LEFT_CORNER,
+	BOTTOM_RIGHT_CORNER
+};
 
 //
 Window Bar;
@@ -67,7 +66,8 @@ static void EnterNotifyHandler (XEvent *);
 static void MapRequestHandler (XEvent *);
 static void UnmapNotifyHandler (XEvent *);
 static void DestroyNotifyHandler (XEvent *);
-static void ButtonPressHandler (XEvent *);
+void ButtonPressHandler (XEvent *);
+static void ConfigureRequestHandler (XEvent *);
 
 // Init functions
 void MoonlightDisplayInit ();
@@ -76,7 +76,7 @@ static void StartEventHandler ();
 
 static void ScanForWindows ();
 unsigned long GetColor (const char *);
-void GetMousePosition (Point *);
+Point GetMousePosition ();
 
 static void CreateBar ();
 static void DrawBar ();
@@ -88,8 +88,13 @@ void CreateNewClient (Window);
 Client *FindClient (Window);
 void KillClient (Client *);
 static void MoveClient (Client *);
+static void ResizeClient (Client *);
 void DragClient (Client *);
+void SweepClient (Client *);
 
+void RecalculateWindowSize (Client *, int, int, int);
+int DeterminateCornerPosition (Client *, int, int);
+		
 static void (*handler[LASTEvent]) (XEvent *) =
 {
 	[KeyPress] = KeyPressHandler,
@@ -97,7 +102,8 @@ static void (*handler[LASTEvent]) (XEvent *) =
 	[MapRequest] = MapRequestHandler,
 	[UnmapNotify] = UnmapNotifyHandler,
 	[DestroyNotify] = DestroyNotifyHandler,
-	[ButtonPress] = ButtonPressHandler
+	[ButtonPress] = ButtonPressHandler,
+	[ConfigureRequest] = ConfigureRequestHandler
 };
 
 MoonlightProps Moonlight;
@@ -160,7 +166,7 @@ MoonlightDisplayInit ()
 	// Is not good D:
 	// Using feh while I don't know how to change wallpaper another way
 	
-	//system ("feh /home/flazher/dev/wm/moon.png --bg-scale");
+	system ("feh /home/flazher/dev/wm/moon.png --bg-scale");
 	XClearWindow (Moonlight.Display, Moonlight.Root);
 	CreateBar();
 	DrawBar();
@@ -191,7 +197,6 @@ int
 main(int argc, char **argv, char **envp)
 {
 	MoonlightDisplayInit ();
-	//ScanForWindows ();
 	StartEventHandler ();
 	MoonlightDisplayTerminate ();
 	XCloseDisplay (Moonlight.Display);
@@ -314,15 +319,14 @@ static void MapRequestHandler (XEvent *Event)
 	if (!(client = FindClient (Event->xmaprequest.window)))
 		CreateNewClient (Event->xmaprequest.window);
 	
-	XSetWindowAttributes NewWindowAttrs;
-	NewWindowAttrs.event_mask = Moonlight.DefaultEventMask | MOUSEMASK;
-	NewWindowAttrs.override_redirect = False;
-	NewWindowAttrs.cursor = Moonlight.denycursor;
+	XSetWindowAttributes NewWindowAttrs = 
+	{
+		.event_mask = Moonlight.DefaultEventMask// | MOUSEMASK;
+	};
 	
-	XChangeWindowAttributes (Moonlight.Display, Event->xmaprequest.window, CWEventMask|CWOverrideRedirect|CWCursor, &NewWindowAttrs);
-	XConfigureWindow (Moonlight.Display, Event->xmaprequest.window, CWBorderWidth, &WindowCh);
-	XMapRaised (Moonlight.Display, Event->xmaprequest.window);
 	XSelectInput (Moonlight.Display, Event->xmaprequest.window, Moonlight.DefaultEventMask | MOUSEMASK);
+	XConfigureWindow (Moonlight.Display, Event->xmaprequest.window, CWBorderWidth, &WindowCh);
+	XMapWindow (Moonlight.Display, Event->xmaprequest.window);
 }
 
 static void
@@ -341,17 +345,33 @@ DestroyNotifyHandler (XEvent *Event)
 	KillClient (client);
 }
 
-static void
+void
 ButtonPressHandler (XEvent *Event)
 {
+	Point MousePosition = GetMousePosition ();
 	Client *client = FindClient (Event->xbutton.window);
-//	char *dbg = malloc(128);
-//	sprintf (dbg,"/home/flazher/dev/wm/a BUTTON_PRESSED,WIN==%i", (client ? Event->xbutton.window : 0));
-//	Spawn (dbg);
-
 	if (Event->xbutton.window != Moonlight.Root && client)
 	{
-		MoveClient (client);
+		(MousePosition.x > client->x + client->width / 2 ||
+		 MousePosition.y > client->y + client->height / 2 ? 
+		 ResizeClient (client) : MoveClient (client));
+	}
+}
+
+static void
+ConfigureRequestHandler (XEvent *Event)
+{
+	Client *client = FindClient (Event->xconfigurerequest.window);
+	if (client)
+	{
+		XWindowChanges WindowCh = 
+		{
+			.x = client->x,
+			.y = client->y,
+			.width = client->width,
+			.height = client->height
+		};
+		XConfigureWindow (Moonlight.Display, client->window, Event->xconfigurerequest.value_mask, &WindowCh);
 	}
 }
 
@@ -407,8 +427,8 @@ CreateNewClient (Window Win)
 	client->window = Win;
 	client->x = WindowAttrs.x;
 	client->y = WindowAttrs.y;
-	client->Width = WindowAttrs.width;
-	client->Height = WindowAttrs.height;
+	client->width = WindowAttrs.width;
+	client->height = WindowAttrs.height;
 }
 
 Client *
@@ -435,11 +455,10 @@ void
 DragClient (Client *client)
 {
 	XEvent Event;
-	Point MousePosition;
+	Point MousePosition = GetMousePosition ();
 	
-	int WindowOldX = client->x, WindowOldY = client->y;
 	XGrabServer (Moonlight.Display);
-	GetMousePosition (&MousePosition);
+	int XDiff = MousePosition.x - client->x, YDiff = MousePosition.y - client->y;
 
 	for (;;)
 	{
@@ -449,8 +468,8 @@ DragClient (Client *client)
 		switch (Event.type)
 		{
 			case MotionNotify:
-				client->x +=Event.xmotion.x - MousePosition.x;
-				client->y +=Event.xmotion.y - MousePosition.y;
+				client->x = client->x + Event.xmotion.x - XDiff;
+				client->y = client->y + Event.xmotion.y - YDiff;
 				XMoveWindow (Moonlight.Display, client->window, client->x, client->y);
 				break;
 			case ButtonRelease:
@@ -462,23 +481,95 @@ DragClient (Client *client)
 }
 
 void
-GetMousePosition (Point *point)
+SweepClient (Client *client)
 {
+	XEvent Event;
+	Point MousePosition = GetMousePosition (), OldPoint;
+	XGrabServer (Moonlight.Display);
+	OldPoint.x = MousePosition.x;
+	OldPoint.y = MousePosition.y;
+	
+	for (;;)
+	{
+		XMaskEvent
+		(
+			Moonlight.Display, ButtonPressMask | ButtonReleaseMask | PointerMotionMask, &Event);
+		switch (Event.type)
+		{
+			case MotionNotify:
+				RecalculateWindowSize
+				(
+				 	client,
+					DeterminateCornerPosition (client, Event.xmotion.x, Event.xmotion.y),
+					Event.xmotion.x - OldPoint.x,
+					Event.xmotion.y - OldPoint.y
+				);
+				OldPoint.x = Event.xmotion.x;
+				OldPoint.y = Event.xmotion.y;
+				break;
+			case ButtonRelease:
+				XUngrabServer (Moonlight.Display);
+				XUngrabPointer (Moonlight.Display, CurrentTime);
+				XClearWindow (Moonlight.Display, client->window);
+
+				return;
+		}
+	}
+}
+
+Point
+GetMousePosition ()
+{
+	Point Result;
 	Window MouseRoot, MouseWindow;
 	int x, y;
 	unsigned int Mask;
 	XQueryPointer
 	(
 		Moonlight.Display, Moonlight.Root,
-		&MouseRoot, &MouseWindow, &point->x,
-		&point->y, &x, &y, &Mask
+		&MouseRoot, &MouseWindow, &Result.x,
+		&Result.y, &x, &y, &Mask
 	);
+	return Result;
 }
 
 static void
 MoveClient (Client *client)
 {
 	DragClient (client);
-	//XMoveWindow (Moonlight.Display, client->window, client->x, client->y);	
-	//XUnmapWindow (Moonlight.Display, Bar);//client->window);
+}
+
+static void
+ResizeClient (Client *client)
+{
+	SweepClient (client);
+}
+
+int
+DeterminateCornerPosition (Client *client, int MouseX, int MouseY)
+{
+	return
+	(MouseX > client->x + client->width / 2 ?
+		(MouseY > client->y + client->height / 2 ?
+		 	BOTTOM_RIGHT_CORNER : TOP_RIGHT_CORNER) :
+		(MouseY > client->y + client->height / 2 ?
+			BOTTOM_LEFT_CORNER : TOP_LEFT_CORNER
+		)
+	);
+}
+
+void
+RecalculateWindowSize (Client *client, int corner, int deltaX, int deltaY)
+{
+	client->width +=
+		(corner == BOTTOM_RIGHT_CORNER || corner == TOP_RIGHT_CORNER ? deltaX : 0);
+	client->height +=
+		(corner == BOTTOM_RIGHT_CORNER || corner == BOTTOM_LEFT_CORNER ? deltaY : 0);
+
+	XMoveResizeWindow
+	(
+		Moonlight.Display, client->window,
+		client->x, client->y,
+		client->width, client->height
+	);
 }
