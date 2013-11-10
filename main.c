@@ -7,7 +7,18 @@
 #include <Imlib2.h>
 #include <giblib/giblib.h>
 #include <unistd.h>
+#include <string.h>
+#include <fcntl.h>
 #include "moonlight.h"
+
+#define CEVENT	"[\x1B[36mEVENT\x1B[0m]\t\t"
+#define CMAP	"[\x1B[32mMAP\x1B[0m]\t\t"
+#define CUNMAP	"[\x1B[31mUNMAP\x1B[0m]\t\t"
+#define CDESTR	"[\x1B[31mDESTROY\x1B[0m]\t"
+#define CREQU	"[\x1B[33mREQUEST\x1B[0m]\t"
+#define CSUCCS	"\t\t  [\x1B[32m*\x1B[0m]"
+#define CFAULT	"\t\t  [\x1B[31m*\x1B[0m]"
+#define CACT	"[\x1B[34mACTION\x1B[0m]\t"
 
 ////////////////////
 // Just for debug //
@@ -37,7 +48,8 @@ typedef struct Client Client;
 
 struct Client
 {
-	Window window, header;
+	int number;
+	Window window;
 	int x, y, width, height;
 	Client *Next;
 };
@@ -59,6 +71,8 @@ enum
 //
 Window Bar;
 //
+
+static void DBG (const char *msg, ...);
 
 // Handlers
 static void KeyPressHandler (XEvent *);
@@ -94,7 +108,11 @@ void SweepClient (Client *);
 
 void RecalculateWindowSize (Client *, int, int, int);
 int DeterminateCornerPosition (Client *, int, int);
-		
+
+//
+static void SendConfigureEvent (Client *);
+//
+
 static void (*handler[LASTEvent]) (XEvent *) =
 {
 	[KeyPress] = KeyPressHandler,
@@ -121,6 +139,7 @@ MoonlightDisplayInit ()
 	
 	Moonlight.DefaultScreen = DefaultScreen (Moonlight.Display);
 	Moonlight.Root = RootWindow (Moonlight.Display, Moonlight.DefaultScreen);
+	DBG ("-- Initializing with root window #%li --", Moonlight.Root);
 	Moonlight.DefaultEventMask =
 		SubstructureRedirectMask | KeyPressMask | DEFAULTMASK;
 
@@ -166,7 +185,7 @@ MoonlightDisplayInit ()
 	// Is not good D:
 	// Using feh while I don't know how to change wallpaper another way
 	
-	system ("feh /home/flazher/dev/wm/moon.png --bg-scale");
+	//system ("feh moon.png --bg-scale");
 	XClearWindow (Moonlight.Display, Moonlight.Root);
 	CreateBar();
 	DrawBar();
@@ -312,6 +331,8 @@ KeyPressHandler (XEvent *Event)
 
 static void MapRequestHandler (XEvent *Event)
 {
+	DBG ("%s Window %lu map request (parent %lu)", CMAP, Event->xmaprequest.window, Moonlight.Root);
+	
 	XWindowChanges WindowCh;
 	WindowCh.border_width = 5;
 
@@ -323,6 +344,7 @@ static void MapRequestHandler (XEvent *Event)
 	{
 		.event_mask = Moonlight.DefaultEventMask// | MOUSEMASK;
 	};
+
 	
 	XSelectInput (Moonlight.Display, Event->xmaprequest.window, Moonlight.DefaultEventMask | MOUSEMASK);
 	XConfigureWindow (Moonlight.Display, Event->xmaprequest.window, CWBorderWidth, &WindowCh);
@@ -332,6 +354,8 @@ static void MapRequestHandler (XEvent *Event)
 static void
 UnmapNotifyHandler (XEvent *Event)
 {
+	DBG ("%s Window %u has been unmapped", CUNMAP, Event->xunmap.window);
+
 	Client *client;
 	if (!(client = FindClient (Event->xunmap.window))) return;
 	KillClient (client);
@@ -340,6 +364,8 @@ UnmapNotifyHandler (XEvent *Event)
 static void
 DestroyNotifyHandler (XEvent *Event)
 {
+	DBG ("%s Window %u had been destroyed", CDESTR, Event->xunmap.window);
+
 	Client *client;
 	if (!(client = FindClient (Event->xdestroywindow.window))) return;
 	KillClient (client);
@@ -348,6 +374,8 @@ DestroyNotifyHandler (XEvent *Event)
 void
 ButtonPressHandler (XEvent *Event)
 {
+	DBG ("%s Window %li catching buttonpress event", CEVENT, Event->xunmap.window);
+
 	Point MousePosition = GetMousePosition ();
 	Client *client = FindClient (Event->xbutton.window);
 	if (Event->xbutton.window != Moonlight.Root && client)
@@ -358,10 +386,11 @@ ButtonPressHandler (XEvent *Event)
 	}
 }
 
-static void
+void
 ConfigureRequestHandler (XEvent *Event)
 {
 	Client *client = FindClient (Event->xconfigurerequest.window);
+	DBG ("%s Window %li requested to be configured", CREQU, Event->xconfigurerequest.window);
 	if (client)
 	{
 		XWindowChanges WindowCh = 
@@ -370,6 +399,7 @@ ConfigureRequestHandler (XEvent *Event)
 			.y = client->y,
 			.width = client->width,
 			.height = client->height
+		
 		};
 		XConfigureWindow (Moonlight.Display, client->window, Event->xconfigurerequest.value_mask, &WindowCh);
 	}
@@ -419,24 +449,29 @@ CreateNewClient (Window Win)
 	
 	Client *client;
 	client = malloc (sizeof *client);
+	client->number = (HeaderClient ? HeaderClient->number + 1 : 1);
 	client->Next = HeaderClient;
 	HeaderClient = client;
 
 	XGetWindowAttributes (Moonlight.Display, Win, &WindowAttrs);
-
+	
 	client->window = Win;
 	client->x = WindowAttrs.x;
 	client->y = WindowAttrs.y;
 	client->width = WindowAttrs.width;
 	client->height = WindowAttrs.height;
+
+	DBG ("%s Creating new client # %u for window %u", CACT, client->number, Win);
 }
 
 Client *
 FindClient (Window Win)
 {
+	DBG ("%s Find_client-request for window #%li", CREQU, Win);
 	Client *client;
 	for (client = HeaderClient; client; client = client->Next)	
-		if (Win == client->window) return client;
+		if (Win == client->window) { DBG ("%s Found it! Client #%i", CSUCCS, client->number); return client; }
+	DBG ("%s And client was not found", CFAULT);
 	return NULL;
 }
 
@@ -511,7 +546,7 @@ SweepClient (Client *client)
 				XUngrabServer (Moonlight.Display);
 				XUngrabPointer (Moonlight.Display, CurrentTime);
 				XClearWindow (Moonlight.Display, client->window);
-
+				SendConfigureEvent (client);
 				return;
 		}
 	}
@@ -572,4 +607,36 @@ RecalculateWindowSize (Client *client, int corner, int deltaX, int deltaY)
 		client->x, client->y,
 		client->width, client->height
 	);
+}
+
+static void
+SendConfigureEvent (Client *client)
+{
+	DBG ("%s Send configure event for %li window", CACT, client->window);
+
+	XConfigureEvent ConfEvent =
+	{
+		.type = ConfigureNotify,
+		.event = client->window,
+		.window = client->window,
+		.x = client->x,
+		.y = client->y,
+		.width = client->width,
+		.height = client->height,
+	};
+	XSendEvent (Moonlight.Display, client->window, False, StructureNotifyMask | PropertyChangeMask, (XEvent *)&ConfEvent);
+}
+
+static void DBG (const char *msg, ...)
+{
+	va_list vl;
+	int fd = open ("debug", O_CREAT | O_WRONLY | O_APPEND, 0666);
+	char *dbgmsg = malloc (512);
+	va_start (vl, msg);
+	vsprintf (dbgmsg, msg, vl);
+	va_end (vl);
+	strcat (dbgmsg, "\n");
+	write (fd, dbgmsg, strlen (dbgmsg));
+	close (fd);
+	free (dbgmsg);
 }
