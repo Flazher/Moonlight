@@ -19,19 +19,24 @@ int aaa = 0;
 
 ///////////////////////////////////
 // TODO: 
-// 		REMOVE PIXMAP AND GCs OF
+// 		+ REMOVE PIXMAP AND GCs OF
 // 		REMOVED CLIENTS
 //
-// 		FIX RESIZE AND MOVING
+// 		+ FIX RESIZE
+// 		- AND MOVING
 //
-// 		UPDATE PIXMAPS OF
+// 		+ UPDATE PIXMAPS OF
 // 		EXPOSED CLIENTS
+//		
+//		- CHANGE BAR AND CLIENT
+//		WIDTH/HEIGHT/X/Y WHEN
+//		WINDOW DO IT ITSELF
 //
 ///////////////////////////////////
 
 typedef struct {
 	GC gc;
-	XGCValues *GCvalues;
+	XGCValues GCvalues;
 	int X, Y, Width, Height;
 	Drawable drawable;
 	unsigned long DefaultGCMask;
@@ -52,7 +57,8 @@ typedef struct Client Client;
 
 struct Client
 {
-	int number;
+	char *name;
+	DrawingContext BarDC;
 	Window window, bar;
 	int x, y, width, height;
 	Client *Next;
@@ -107,6 +113,7 @@ static void Die (const char *, ...);
 
 void CreateNewClient (Window);
 Window CreateWindowBar (Client *, XWindowAttributes *);
+void RedrawWindowBar (Client *);
 Client *FindClient (Window);
 void KillClient (Client *);
 static void MoveClient (Client *);
@@ -139,7 +146,6 @@ MoonlightDisplayInit ()
 	
 	Moonlight.DefaultScreen = DefaultScreen (Moonlight.Display);
 	Moonlight.Root = RootWindow (Moonlight.Display, Moonlight.DefaultScreen);
-	DBG ("-- Initializing with root window #%li --", Moonlight.Root);
 	Moonlight.DefaultEventMask =
 		SubstructureRedirectMask | KeyPressMask | DEFAULTMASK;
 
@@ -154,26 +160,23 @@ MoonlightDisplayInit ()
 		CWEventMask|CWCursor, &RootWindowAttrs
 	);
 	
-	XGCValues rgcv = {
-		.function = GXxor, 
-		.background = GetColor(BACKGROUNDCOLOR),
-		.foreground = GetColor(BACKGROUNDCOLOR),
-		.plane_mask = AllPlanes
-	};
-	
 	DrawingContext rdc =
 	{
 		.Width = DisplayWidth (Moonlight.Display, Moonlight.DefaultScreen),
 		.Height = DisplayHeight (Moonlight.Display, Moonlight.DefaultScreen),
 		.X = 0, .Y = 0,
-		.GCvalues = &rgcv,
 		.DefaultGCMask = 
 			GCFunction | GCPlaneMask | GCBackground | GCForeground
 	};
+	
+	rdc.GCvalues.function = GXxor; 
+	rdc.GCvalues.background = GetColor(BACKGROUNDCOLOR);
+	rdc.GCvalues.foreground = GetColor(BACKGROUNDCOLOR);
+	rdc.GCvalues.plane_mask = AllPlanes;
 
 	Moonlight.DC = &rdc;
 	Moonlight.DC->gc = XCreateGC
-		(Moonlight.Display, Moonlight.Root, Moonlight.DC->DefaultGCMask, Moonlight.DC->GCvalues);	
+		(Moonlight.Display, Moonlight.Root, Moonlight.DC->DefaultGCMask, &Moonlight.DC->GCvalues);	
 	
 	Moonlight.DC->drawable = XCreatePixmap (Moonlight.Display, Moonlight.Root, Moonlight.DC->Width, Moonlight.DC->Height, DefaultDepth(Moonlight.Display, Moonlight.DefaultScreen));
 	
@@ -266,17 +269,8 @@ CreateBar()
 static void
 DrawBar()
 {
-	XGCValues bgcv =
-	{
-		.function = GXxor,
-		.background = GetColor(BARCOLOR),
-		.foreground = GetColor(BARCOLOR),
-		.plane_mask = AllPlanes
-	};
-
 	DrawingContext BarDC = 
 	{
-		.GCvalues = &bgcv,
 		.X = 0, .Y = Moonlight.DC->Height - BARHEIGHT,
 		.Width = Moonlight.DC->Width, .Height = BARHEIGHT,
 		.drawable =
@@ -286,11 +280,16 @@ DrawBar()
 				 Moonlight.DefaultScreen)
 			)
 	};
+
+	BarDC.GCvalues.function = GXxor;
+	BarDC.GCvalues.background = GetColor(BARCOLOR);
+	BarDC.GCvalues.foreground = GetColor(BARCOLOR);
+	BarDC.GCvalues.plane_mask = AllPlanes;
 	
 	BarDC.gc = XCreateGC
 	(
 		 Moonlight.Display, Bar,
-		 Moonlight.DC->DefaultGCMask, BarDC.GCvalues
+		 Moonlight.DC->DefaultGCMask, &BarDC.GCvalues
 	);
 
 	Fill (&BarDC);
@@ -329,32 +328,47 @@ Window CreateWindowBar (Client *client, XWindowAttributes *WindowAttrs)
 		MOUSEMASK, GrabModeAsync, GrabModeAsync, None, None
 	);
 
-		
-	XGCValues gcv = {
-		.function = GXxor, 
-		.background = GetColor(BACKGROUNDCOLOR),
-		.foreground = GetColor(BACKGROUNDCOLOR),
-		.plane_mask = AllPlanes
-	};
-	DrawingContext rdc =
-	{
-		.Width = WindowAttrs->width,
-		.Height = WINBARHEIGHT,
-		.X = 0, .Y = 0,
-		.GCvalues = &gcv,
-		.DefaultGCMask = 
-			GCFunction | GCPlaneMask | GCBackground | GCForeground,
-		.drawable = XCreatePixmap (Moonlight.Display, WindowBar, WindowAttrs->width, WINBARHEIGHT, DefaultDepth(Moonlight.Display, Moonlight.DefaultScreen))
-	};
-
-	rdc.gc = XCreateGC
-		(Moonlight.Display, Moonlight.Root, rdc.DefaultGCMask, rdc.GCvalues);	
-
-	Fill (&rdc);
-	XSetWindowBackgroundPixmap(Moonlight.Display, WindowBar, rdc.drawable);
-	XMapWindow (Moonlight.Display, WindowBar);
-
+	client->BarDC.Width = WindowAttrs->width;
+	client->BarDC.Height = WINBARHEIGHT;
+	client->BarDC.X = 0;
+	client->BarDC.Y = 0;
+	client->BarDC.DefaultGCMask = GCFunction | GCPlaneMask | GCBackground | GCForeground;
+	client->BarDC.GCvalues.function = GXclear;
+	client->BarDC.GCvalues.background = GetColor("#888888");
+	client->BarDC.GCvalues.foreground = GetColor("#222222");
+	client->BarDC.GCvalues.plane_mask = AllPlanes;
+	client->BarDC.gc = XCreateGC
+		(Moonlight.Display, WindowBar, client->BarDC.DefaultGCMask, &client->BarDC.GCvalues);	
 	return WindowBar;
+}
+
+void
+RedrawWindowBar (Client *client)
+{
+	client->BarDC.Width = client->width;
+	client->BarDC.drawable =
+		XCreatePixmap
+		(
+		 	Moonlight.Display, client->bar, client->width, WINBARHEIGHT,
+			DefaultDepth(Moonlight.Display, Moonlight.DefaultScreen)
+		);
+	client->BarDC.GCvalues.function = GXclear;	
+	XChangeGC (Moonlight.Display, client->BarDC.gc, GCFunction, &client->BarDC.GCvalues);
+	
+	Fill (&client->BarDC);
+	
+	client->BarDC.GCvalues.function = GXxor;	
+	XChangeGC (Moonlight.Display, client->BarDC.gc, GCFunction, &client->BarDC.GCvalues);
+
+	Fill (&client->BarDC);
+
+	if (client->name)
+	XDrawString (Moonlight.Display, client->BarDC.drawable, client->BarDC.gc, 15, 15, client->name, strlen(client->name));
+	
+	XSetWindowBackgroundPixmap(Moonlight.Display, client->bar, client->BarDC.drawable);
+	XClearWindow (Moonlight.Display, client->bar);
+	//XFreeGC (Moonlight.Display, client->BarDC.gc);
+	XFreePixmap (Moonlight.Display, client->BarDC.drawable);
 }
 
 static void
@@ -371,8 +385,11 @@ EnterNotifyHandler (XEvent *Event)
 {
 	Client *client;
 	if ((client = FindClient (Event->xfocus.window)))
+	{
+		XRaiseWindow (Moonlight.Display, client->window);
 		XRaiseWindow (Moonlight.Display, client->bar);
-	
+	}
+
 	XRaiseWindow (Moonlight.Display, Event->xfocus.window);
 	XFocusChangeEvent *Ev = &Event->xfocus;
 	XSetInputFocus (Moonlight.Display, Ev->window, RevertToPointerRoot, CurrentTime);
@@ -387,34 +404,35 @@ KeyPressHandler (XEvent *Event)
 
 static void MapRequestHandler (XEvent *Event)
 {
-	DBG ("%s Window %lu map request (parent %lu)", CMAP, Event->xmaprequest.window, Moonlight.Root);
-	
-	XWindowChanges WindowCh;
-	WindowCh.border_width = WINBORDERSIZE;
-
-		Client *client;
+	Client *client;
 	if (!(client = FindClient (Event->xmaprequest.window)))
 		CreateNewClient (Event->xmaprequest.window);
 	
+	XSetWindowAttributes WindowAttrs = { .event_mask = Moonlight.DefaultEventMask };
+	XWindowChanges WindowCh = { .border_width = WINBORDERSIZE };
 	XSelectInput (Moonlight.Display, Event->xmaprequest.window, Moonlight.DefaultEventMask);
+	
 	XGrabButton
 	(
 		Moonlight.Display, AnyButton, AnyModifier,
 		Event->xmaprequest.window, False,
 		MOUSEMASK, GrabModeAsync, GrabModeAsync, None, None
 	);
-	XConfigureWindow (Moonlight.Display, Event->xmaprequest.window, CWBorderWidth, &WindowCh);
+
+	XChangeWindowAttributes
+	(
+		Moonlight.Display, Event->xmaprequest.window,
+		CWEventMask, &WindowAttrs
+	);
+
+	XConfigureWindow (Moonlight.Display, Event->xmaprequest.window, CWBorderWidth | CWEventMask, &WindowCh);
 	XMapWindow (Moonlight.Display, Event->xmaprequest.window);
 }
 
 static void
 UnmapNotifyHandler (XEvent *Event)
 {
-	DBG ("%s Window %u has been unmapped", CUNMAP, Event->xunmap.window);
 
-	Client *client;
-	if (!(client = FindClient (Event->xunmap.window))) return;
-	KillClient (client);
 }
 
 static void
@@ -422,6 +440,7 @@ DestroyNotifyHandler (XEvent *Event)
 {
 	Client *client;
 	if (!(client = FindClient (Event->xdestroywindow.window))) return;
+	XDestroyWindow (Moonlight.Display, client->bar);
 	KillClient (client);
 }
 
@@ -440,7 +459,7 @@ ButtonPressHandler (XEvent *Event)
              \__/
            /|[><]|\
            ||    ||
-		*/
+	*/
 		(Event->xbutton.window == client->bar ? MoveClient (client) :
 		(MousePosition.x > client->x + client->width / 2 ||
 		 MousePosition.y > client->y + client->height / 2 ? 
@@ -503,18 +522,21 @@ CreateNewClient (Window Win)
 	
 	Client *client;
 	client = malloc (sizeof *client);
-	client->number = (HeaderClient ? HeaderClient->number + 1 : 1);
 	client->Next = HeaderClient;
 	HeaderClient = client;
 
 	XGetWindowAttributes (Moonlight.Display, Win, &WindowAttrs);
+	XFetchName (Moonlight.Display, Win, &client->name);
 	
-	client->window = Win;
-	client->bar = CreateWindowBar (client, &WindowAttrs);
 	client->x = WindowAttrs.x;
 	client->y = WindowAttrs.y;
 	client->width = WindowAttrs.width;
 	client->height = WindowAttrs.height;
+
+	client->window = Win;
+	client->bar = CreateWindowBar (client, &WindowAttrs);
+	RedrawWindowBar (client);
+	XMapWindow (Moonlight.Display, client->bar);
 }
 
 Client *
@@ -576,8 +598,8 @@ ResizeClient (Client *client)
 	XEvent Event;
 	Point MousePosition = GetMousePosition (), OldPoint;
 	XGrabServer (Moonlight.Display);
-	OldPoint.x = MousePosition.x;
-	OldPoint.y = MousePosition.y;
+	OldPoint.x = MousePosition.x - client->x;
+	OldPoint.y = MousePosition.y - client->y;
 	
 	for (;;)
 	{
@@ -596,6 +618,7 @@ ResizeClient (Client *client)
 				);
 				OldPoint.x = Event.xmotion.x;
 				OldPoint.y = Event.xmotion.y;
+				RedrawWindowBar (client);
 				break;
 			case ButtonRelease:
 				XUngrabServer (Moonlight.Display);
@@ -632,10 +655,10 @@ int
 DeterminateCornerPosition (Client *client, int MouseX, int MouseY)
 {
 	return
-	(MouseX > client->x + client->width / 2 ?
-		(MouseY > client->y + client->height / 2 ?
+	(MouseX > client->width / 2 ?
+		(MouseY > client->height / 2 ?
 		 	BOTTOM_RIGHT_CORNER : TOP_RIGHT_CORNER) :
-		(MouseY > client->y + client->height / 2 ?
+		(MouseY > client->height / 2 ?
 			BOTTOM_LEFT_CORNER : TOP_LEFT_CORNER
 		)
 	);

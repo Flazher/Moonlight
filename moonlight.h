@@ -4,7 +4,7 @@
 
 // Masks
 
-#define DEFAULTMASK		(EnterWindowMask | ExposureMask | FocusChangeMask | PropertyChangeMask | SubstructureNotifyMask)
+#define DEFAULTMASK		(EnterWindowMask | ExposureMask | FocusChangeMask | PropertyChangeMask | SubstructureNotifyMask | SubstructureNotifyMask)
 #define BUTTONMASK		(ButtonPressMask | ButtonReleaseMask)
 #define MOUSEMASK		(BUTTONMASK | PointerMotionMask)
 
@@ -34,4 +34,4 @@
 //Strings
 
 #define TESTSTATUS		"Moonlight v0.1"
-#define TESTPANEL		"Allahu akbar. Cirno is baka. Y'all goin' to die."
+#define TESTPANEL		"Here is message of the day. Best news at the moment: I'm not daddy. Fucking amazing."
