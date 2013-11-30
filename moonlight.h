@@ -1,3 +1,6 @@
+#define XFT
+
+#define Dpy	Moonlight.Display
 /*
  * Temporary config file
  */
@@ -8,12 +11,15 @@
 #define BUTTONMASK		(ButtonPressMask | ButtonReleaseMask)
 #define MOUSEMASK		(BUTTONMASK | PointerMotionMask)
 
+#define MODKEY			ShiftMask
+
 //Colors
 
-#define BACKGROUNDCOLOR "#333333"
-#define BARCOLOR		"#999999"
-#define WINHDRCOLOR		"#222222"
-
+#define BACKGROUNDCOLOR "#999999"
+#define BARCOLOR		"#333333"
+#define WINBARCOLOR		"#222222"
+#define BARTEXTCOLOR	"#FFFFFF"
+#define MENUCOLOR		"#333333"
 // Colorful debug output
 
 #define CEVENT	"[\x1B[36mEVENT\x1B[0m]\t\t"
@@ -27,11 +33,21 @@
 
 //Size parameters
 
-#define BARHEIGHT		20
+#define BARHEIGHT		30
 #define WINBARHEIGHT	20
-#define WINBORDERSIZE	5
+#define WINBORDERSIZE	3
+
+#define MENUWIDTH		200
+#define MENUHEIGHT		300
 
 //Strings
 
 #define TESTSTATUS		"Moonlight v0.1"
-#define TESTPANEL		"Here is message of the day. Best news at the moment: I'm not daddy. Fucking amazing."
+#define TESTPANEL		"Exec: "
+
+#define EXITDIALOG		"Exit"
+
+//Another settings
+
+#define FOCUSONENTER	True
+#define DEFAULTFONT	 	"-*-cantarell-*-*-*-*-12-*-*-*-*-*-iso8859-2"
