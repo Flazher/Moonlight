@@ -1,6 +1,7 @@
 #define XFT
 
-#define Dpy	Moonlight.Display
+#define Dpy				Moonlight.Display
+
 /*
  * Temporary config file
  */
@@ -31,6 +32,17 @@
 #define CFAULT	"\t\t  [\x1B[31m*\x1B[0m]"
 #define CACT	"[\x1B[34mACTION\x1B[0m]\t"
 
+// Menu entries
+
+typedef struct MenuEntry MenuEntry;
+
+struct MenuEntry
+{
+	char *title;
+	Window window;
+	MenuEntry *Next;
+};
+
 //Size parameters
 
 #define BARHEIGHT		30
@@ -39,7 +51,7 @@
 
 #define MENUWIDTH		200
 #define MENUHEIGHT		300
-
+#define MENUENTRYHEIGHT	30
 //Strings
 
 #define TESTSTATUS		"Moonlight v0.1"
